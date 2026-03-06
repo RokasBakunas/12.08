@@ -72,9 +72,9 @@ router.get('/arrivals/kaunas', async (req: Request, res: Response) => {
     const flights = await getKaunasArrivals(hours);
     return res.json({
       airport: 'EYKA',
-      windowHours: hours,
       total: flights.length,
       checkedAt: new Date().toISOString(),
+      note: 'Live ADS-B data – aircraft currently at/near Kaunas airport.',
       flights,
     });
   } catch (err) {

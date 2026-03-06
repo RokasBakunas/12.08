@@ -1,16 +1,14 @@
 {
-  "name": "job-portal-monorepo",
+  "name": "vno-kun-diversion-detector",
   "version": "0.1.0",
   "private": true,
   "workspaces": [
-    "apps/*",
-    "packages/*"
+    "apps/*"
   ],
   "scripts": {
-    "dev:api": "npm --workspace apps/api run dev",
-    "dev:web": "npm --workspace apps/web run dev",
-    "lint": "npm --workspaces run lint",
-    "test": "npm --workspaces run test"
+    "dev": "npm --workspace apps/api run dev",
+    "lint": "npm --workspace apps/api run lint",
+    "test": "npm --workspace apps/api run test"
   },
   "engines": {
     "node": ">=18"

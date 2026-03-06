@@ -51,7 +51,9 @@ router.get('/diversions', async (req: Request, res: Response) => {
     return res.status(502).json({
       error: 'upstream_error',
       message: 'Could not fetch flight data from OpenSky Network. Please retry later.',
-      debug: String(err),
+      debug: err instanceof Error
+        ? `${err.message}${(err as NodeJS.ErrnoException).code ? ` [${(err as NodeJS.ErrnoException).code}]` : ''}${err.cause ? ` cause: ${err.cause}` : ''}`
+        : String(err),
     });
   }
 });

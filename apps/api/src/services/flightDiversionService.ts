@@ -105,7 +105,7 @@ function buildHeaders(): Record<string, string> {
 async function fetchFlights(endpoint: string): Promise<RawFlight[]> {
   const res = await fetch(endpoint, {
     headers: buildHeaders(),
-    signal: AbortSignal.timeout(20_000),
+    signal: AbortSignal.timeout(8_000),
   });
 
   if (res.status === 404) {

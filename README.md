@@ -1,8 +1,8 @@
 # VNO→KUN Skrydžių Nukreipimo Aptikimas
 
-Express.js REST API, dislokuotas Vercel platformoje. Automatiškai aptinka, kai skrydžiai iš Vilniaus oro uosto (VNO / ICAO: EYVI) nukreipiami į Kauną (KUN / ICAO: EYKA).
+Express.js REST API, dislokuotas Vercel platformoje. Aptinka orlaivius, kurie šiuo metu yra Kauno oro uosto (KUN / ICAO: EYKA) rajone ir nėra reguliarių Kauno maršrutų vykdytojai – tai potencialūs nukreipimai iš Vilniaus (VNO / ICAO: EYVI).
 
-Duomenų šaltinis: [OpenSky Network](https://opensky-network.org/) – nemokama viešoji API, API rakto nereikia.
+Duomenų šaltinis: [ADS-B Exchange](https://api.adsb.lol/) per `api.adsb.lol` – nemokama, realaus laiko ADS-B duomenų API, API rakto nereikia.
 
 ---
 
@@ -10,49 +10,44 @@ Duomenų šaltinis: [OpenSky Network](https://opensky-network.org/) – nemokama
 
 | Metodas | Kelias | Aprašymas |
 |---------|--------|-----------|
+| GET | `/` | API informacija ir endpoint'ų sąrašas |
 | GET | `/health` | Sveikatos patikra |
 | GET | `/ready` | Parengtumo patikra |
-| GET | `/flights/diversions` | Nukreiptų skrydžių sąrašas |
-| GET | `/flights/status` | Ar yra nukreipimų (be pilno sąrašo) |
-| GET | `/flights/departures/vilnius` | Visi VNO išskridimų duomenys |
-| GET | `/flights/arrivals/kaunas` | Visi KUN atskridimų duomenys |
-| POST | `/flights/cache/clear` | Kešo išvalymas |
-
-Visi `/flights` endpoint'ai priima `?hours=1-24` parametrą (numatytasis: 6 val.).
+| GET | `/flights/diversions` | Potencialiai nukreiptų skrydžių sąrašas (live) |
+| GET | `/flights/status` | Ar yra nukreipimų šiuo metu (be pilno sąrašo) |
+| GET | `/flights/arrivals/kaunas` | Visi orlaiviai šiuo metu Kauno rajone (raw) |
+| POST | `/flights/cache/clear` | Kešo išvalymas (priverstinis atnaujinimas) |
 
 ### Aptikimo logika
 
-Sistema lygina orlaivių ICAO24 transponderio kodus:
-1. Orlaivis **išskrido** iš Vilniaus (EYVI) per nurodytą laiko langą
-2. Tas pats orlaivis **nusileido** Kaune (EYKA) per tą patį langą
+1. Gaunami visi orlaiviai 25 jūrmylių spinduliu aplink Kauno oro uostą (live ADS-B)
+2. Filtruojami reguliarūs Kauno vežėjai: **Ryanair** (RYR), **Wizz Air** (WZZ), Ryanair Sun (RYS), Buzz (BZZ)
+3. Likę orlaiviai – potencialūs nukreipimai iš Vilniaus ar kitų destinacijų
 
-→ Toks skrydis žymimas kaip potencialus nukreipimas.
+> **Pastaba:** duomenys yra realaus laiko (ne istoriniai). Jei nukreipimas įvyko prieš kelias valandas ir orlaivis jau išskrido, jis nebus rodomas.
 
 ### Pavyzdinė atsakymo struktūra (`/flights/diversions`)
 
 ```json
 {
   "totalDiversions": 1,
-  "windowHours": 6,
   "checkedAt": "2026-03-06T10:00:00.000Z",
-  "originAirport": "EYVI",
   "diversionAirport": "EYKA",
+  "note": "Aircraft currently at Kaunas operated by carriers without scheduled Kaunas routes – likely diverted from Vilnius (EYVI). Live ADS-B data.",
   "flights": [
     {
-      "callsign": "BTI123",
+      "callsign": "LOT123",
       "icao24": "a1b2c3",
-      "departedAt": 1741251600,
-      "departedAtIso": "2026-03-06T07:00:00.000Z",
-      "arrivedAt": 1741252500,
-      "arrivedAtIso": "2026-03-06T07:15:00.000Z",
-      "originAirport": "EYVI",
+      "registration": "SP-LXX",
+      "aircraftType": "B738",
       "diversionAirport": "EYKA",
-      "flightDurationSeconds": 900,
       "detectedAt": "2026-03-06T10:00:00.000Z"
     }
   ]
 }
 ```
+
+Kai nukreipimų nėra: `"totalDiversions": 0` ir `"flights": []`.
 
 ---
 
@@ -64,7 +59,7 @@ npm run dev
 # API pasiekiamas: http://localhost:4000
 ```
 
-Aplinkos kintamieji (nebūtini – API veikia be jų):
+Aplinkos kintamieji (nebūtini):
 
 ```env
 API_PORT=4000
@@ -76,7 +71,7 @@ API_PORT=4000
 
 1. Importuoti repozitoriją Vercel platformoje
 2. Deploy – `vercel.json` automatiškai nukreipia visas užklausas į API
-3. Aplinkos kintamųjų nereikia
+3. Aplinkos kintamųjų nereikia (ADS-B Exchange API yra viešas)
 
 ---
 
@@ -85,9 +80,9 @@ API_PORT=4000
 ```
 apps/api/src/
 ├── routes/
-│   └── flights.ts              # Visi /flights endpoint'ai
+│   └── flights.ts                 # Visi /flights endpoint'ai
 ├── services/
-│   └── flightDiversionService.ts  # OpenSky API integracija + aptikimo logika
-└── main.ts                     # Express app (eksportuojamas Vercel)
-vercel.json                     # Vercel konfigūracija
+│   └── flightDiversionService.ts  # ADS-B API integracija + aptikimo logika
+└── main.ts                        # Express app (eksportuojamas Vercel)
+vercel.json                        # Vercel konfigūracija
 ```

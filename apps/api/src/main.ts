@@ -6,6 +6,9 @@ import flightRoutes from './routes/flights';
 
 const app = express();
 
+// Trust Vercel / reverse-proxy X-Forwarded-For headers
+app.set('trust proxy', 1);
+
 app.use(helmet());
 app.use(cors());
 app.use(express.json());

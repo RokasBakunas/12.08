@@ -86,10 +86,26 @@ function toCache(key: string, data: DivertedFlightSummary): void {
   cache.set(key, { data, expiresAt: Date.now() + CACHE_TTL_MS });
 }
 
+/**
+ * Builds Basic Auth header if OPENSKY_USERNAME / OPENSKY_PASSWORD env vars are set.
+ * OpenSky blocks anonymous requests from cloud provider IPs (Vercel/AWS/GCP).
+ * Register a free account at https://opensky-network.org/login?view=registration
+ * and add credentials to your Vercel environment variables.
+ */
+function buildHeaders(): Record<string, string> {
+  const user = process.env.OPENSKY_USERNAME;
+  const pass = process.env.OPENSKY_PASSWORD;
+  const headers: Record<string, string> = { 'User-Agent': 'VNO-KUN-DiversionDetector/1.0' };
+  if (user && pass) {
+    headers['Authorization'] = `Basic ${Buffer.from(`${user}:${pass}`).toString('base64')}`;
+  }
+  return headers;
+}
+
 async function fetchFlights(endpoint: string): Promise<RawFlight[]> {
   const res = await fetch(endpoint, {
-    headers: { 'User-Agent': 'VNO-KUN-DiversionDetector/1.0' },
-    signal: AbortSignal.timeout(15_000),
+    headers: buildHeaders(),
+    signal: AbortSignal.timeout(20_000),
   });
 
   if (res.status === 404) {

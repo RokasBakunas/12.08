@@ -8,6 +8,7 @@ import jobRoutes from './routes/jobs';
 import candidateRoutes from './routes/candidate';
 import employerRoutes from './routes/employer';
 import adminRoutes from './routes/admin';
+import flightRoutes from './routes/flights';
 import { db } from './data/store';
 
 db.seed();
@@ -36,6 +37,7 @@ app.use('/jobs', jobRoutes);
 app.use('/candidate', candidateRoutes);
 app.use('/employer', employerRoutes);
 app.use('/admin', adminRoutes);
+app.use('/flights', flightRoutes);
 
 app.listen(process.env.API_PORT || 4000, () => {
   // eslint-disable-next-line no-console

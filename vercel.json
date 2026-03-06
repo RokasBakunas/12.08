@@ -14,6 +14,7 @@
     { "src": "/health", "dest": "apps/api/src/main.ts" },
     { "src": "/ready", "dest": "apps/api/src/main.ts" },
     { "src": "/flights/(.*)", "dest": "apps/api/src/main.ts" },
+    { "handle": "filesystem" },
     { "src": "/(.*)", "dest": "apps/web" }
   ],
   "env": {}

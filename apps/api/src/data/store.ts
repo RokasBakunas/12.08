@@ -1,87 +1,76 @@
-import { randomUUID } from 'crypto';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
+import { randomUUID } from 'crypto';
+import type { Permission, Role, User } from '../../../../packages/shared/src/types';
 import {
-  Permission,
-  Role,
-  User,
-  Company,
-  JobPost,
-  Application,
-  CvVersion,
-  MessageThread,
-  Message,
-  Notification,
-  SubscriptionPlan,
-  Subscription,
-  AuditLogEntry,
-  Report,
-} from '../../../../packages/shared/src/types';
+  UserModel,
+  CompanyModel,
+  JobPostModel,
+  AuditLogModel,
+  CvVersionModel,
+  SubscriptionPlanModel,
+  SubscriptionModel,
+} from '../db/models';
 
-const users: User[] = [];
-const companies: Company[] = [];
-const jobPosts: JobPost[] = [];
-const applications: Application[] = [];
-const cvVersions: CvVersion[] = [];
-const messageThreads: MessageThread[] = [];
-const notifications: Notification[] = [];
-const plans: SubscriptionPlan[] = [];
-const subscriptions: Subscription[] = [];
-const auditLog: AuditLogEntry[] = [];
-const reports: Report[] = [];
-
-const defaultPermissions: Record<Role, Permission[]> = {
+export const defaultPermissions: Record<Role, Permission[]> = {
   candidate: ['view_jobs', 'apply', 'message_employer', 'manage_profile'],
   employer: ['create_job', 'manage_job', 'view_applicants', 'message_candidate', 'view_analytics'],
   admin: ['manage_users', 'manage_jobs', 'view_reports', 'manage_payments', 'view_audit'],
   moderator: ['manage_jobs', 'view_reports'],
 };
 
-function seed() {
-  if (users.length) return;
-  const admin: User = {
-    id: randomUUID(),
-    email: 'admin@example.com',
-    passwordHash: bcrypt.hashSync('Admin123!', 10),
-    role: 'admin',
-    status: 'active',
-    createdAt: new Date().toISOString(),
-    permissions: defaultPermissions.admin,
-  };
-  const company: Company = {
-    id: randomUUID(),
+/** Idempotent seed – runs once per DB (skips if admin already exists). */
+export async function seed(): Promise<void> {
+  const exists = await UserModel.findOne({ email: 'admin@example.com' }).lean();
+  if (exists) return;
+
+  const adminId = randomUUID();
+  const companyId = randomUUID();
+  const employerId = randomUUID();
+  const candidateId = randomUUID();
+
+  await CompanyModel.create({
+    _id: companyId,
     name: 'Baltic Tech',
     code: 'BT-001',
     description: 'Innovative Baltic technology hub.',
     website: 'https://baltic.example.com',
     logoUrl: '',
-    createdAt: new Date().toISOString(),
     status: 'approved',
-  };
-  const employer: User = {
-    id: randomUUID(),
-    email: 'employer@example.com',
-    passwordHash: bcrypt.hashSync('Employer123!', 10),
-    role: 'employer',
-    status: 'active',
-    createdAt: new Date().toISOString(),
-    permissions: defaultPermissions.employer,
-    companyId: company.id,
-  };
-  const candidate: User = {
-    id: randomUUID(),
-    email: 'candidate@example.com',
-    passwordHash: bcrypt.hashSync('Candidate123!', 10),
-    role: 'candidate',
-    status: 'active',
-    createdAt: new Date().toISOString(),
-    permissions: defaultPermissions.candidate,
-  };
-  users.push(admin, employer, candidate);
-  companies.push(company);
-  const job: JobPost = {
-    id: randomUUID(),
-    companyId: company.id,
+  });
+
+  await UserModel.create([
+    {
+      _id: adminId,
+      email: 'admin@example.com',
+      passwordHash: bcrypt.hashSync('Admin123!', 10),
+      role: 'admin',
+      status: 'active',
+      permissions: defaultPermissions.admin,
+    },
+    {
+      _id: employerId,
+      email: 'employer@example.com',
+      passwordHash: bcrypt.hashSync('Employer123!', 10),
+      role: 'employer',
+      status: 'active',
+      permissions: defaultPermissions.employer,
+      companyId,
+    },
+    {
+      _id: candidateId,
+      email: 'candidate@example.com',
+      passwordHash: bcrypt.hashSync('Candidate123!', 10),
+      role: 'candidate',
+      status: 'active',
+      permissions: defaultPermissions.candidate,
+    },
+  ]);
+
+  const jobId = randomUUID();
+  await JobPostModel.create({
+    _id: jobId,
+    companyId,
     title: 'Front-end Engineer',
     description: 'Build SSR-ready recruitment experiences.',
     salaryMin: 4000,
@@ -95,58 +84,51 @@ function seed() {
     expiresAt: new Date(Date.now() + 1000 * 60 * 60 * 24 * 30).toISOString(),
     premiumFlags: ['highlight'],
     tags: ['React', 'TypeScript'],
-  };
-  jobPosts.push(job);
-  const cv: CvVersion = {
-    id: randomUUID(),
-    candidateId: candidate.id,
-    createdAt: new Date().toISOString(),
+  });
+
+  await CvVersionModel.create({
+    _id: randomUUID(),
+    candidateId,
     jsonData: { summary: 'Full-stack developer', skills: ['Node.js', 'React'] },
-  };
-  cvVersions.push(cv);
-  auditLog.push({
-    id: randomUUID(),
-    actorId: admin.id,
+  });
+
+  await AuditLogModel.create({
+    _id: randomUUID(),
+    actorId: adminId,
     action: 'seed',
     entityType: 'system',
     entityId: 'seed',
     before: {},
     after: {},
-    timestamp: new Date().toISOString(),
   });
-  plans.push({ id: 'starter', name: 'Starter', priceCents: 1999, currency: 'eur', features: ['1 job', '7 days highlight'] });
-  subscriptions.push({ id: randomUUID(), userId: employer.id, planId: 'starter', status: 'active', startedAt: new Date().toISOString() });
+
+  await SubscriptionPlanModel.create({
+    _id: 'starter',
+    name: 'Starter',
+    priceCents: 1999,
+    currency: 'eur',
+    features: ['1 job', '7 days highlight'],
+  });
+
+  await SubscriptionModel.create({
+    _id: randomUUID(),
+    userId: employerId,
+    planId: 'starter',
+    status: 'active',
+  });
 }
 
-function authenticate(email: string, password: string): User | null {
-  const user = users.find((u) => u.email === email);
+export async function authenticate(email: string, password: string): Promise<User | null> {
+  const user = await UserModel.findOne({ email }).lean<User & { _id: string }>();
   if (!user) return null;
   const valid = bcrypt.compareSync(password, user.passwordHash);
-  return valid ? user : null;
+  if (!valid) return null;
+  return { ...user, id: user._id } as unknown as User;
 }
 
-function issueTokens(user: User) {
+export function issueTokens(user: { id: string; role: Role }) {
   const secret = process.env.JWT_SECRET || 'dev-secret';
   const accessToken = jwt.sign({ sub: user.id, role: user.role }, secret, { expiresIn: '15m' });
   const refreshToken = jwt.sign({ sub: user.id, type: 'refresh' }, secret, { expiresIn: '7d' });
   return { accessToken, refreshToken };
 }
-
-export const db = {
-  users,
-  companies,
-  jobPosts,
-  applications,
-  cvVersions,
-  messageThreads,
-  messages,
-  notifications,
-  plans,
-  subscriptions,
-  auditLog,
-  reports,
-  defaultPermissions,
-  seed,
-  authenticate,
-  issueTokens,
-};

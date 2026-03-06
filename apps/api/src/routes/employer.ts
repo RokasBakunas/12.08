@@ -1,31 +1,35 @@
-import { Router } from 'express';
-import { db } from '../data/store';
+import { Router, Response } from 'express';
 import { AuthRequest, requireAuth, requirePermission } from '../middleware/auth';
+import { JobPostModel, ApplicationModel } from '../db/models';
 
 const router = Router();
 
 router.use(requireAuth, requirePermission('view_applicants'));
 
-router.get('/jobs', (req: AuthRequest, res) => {
-  const jobs = db.jobPosts.filter((j) => j.companyId === req.user?.companyId || j.companyId === req.user?.id);
-  return res.json({ items: jobs });
+router.get('/jobs', async (req: AuthRequest, res: Response) => {
+  const companyId = req.user!.companyId || req.user!.id;
+  const items = await JobPostModel.find({ companyId }).lean();
+  return res.json({ items });
 });
 
-router.get('/jobs/:id/applicants', (req: AuthRequest, res) => {
-  const job = db.jobPosts.find((j) => j.id === req.params.id);
+router.get('/jobs/:id/applicants', async (req: AuthRequest, res: Response) => {
+  const job = await JobPostModel.findById(req.params['id']).lean();
   if (!job) return res.status(404).json({ error: 'job_not_found' });
-  const apps = db.applications.filter((a) => a.jobPostId === job.id);
-  return res.json({ jobId: job.id, applicants: apps });
+  const applicants = await ApplicationModel.find({ jobPostId: job._id }).lean();
+  return res.json({ jobId: job._id, applicants });
 });
 
-router.get('/analytics', (req: AuthRequest, res) => {
-  const jobs = db.jobPosts.filter((j) => j.companyId === req.user?.companyId || j.companyId === req.user?.id);
-  const stats = jobs.map((job) => ({
-    jobId: job.id,
-    title: job.title,
-    applications: db.applications.filter((a) => a.jobPostId === job.id).length,
-    premium: job.premiumFlags?.includes('highlight') ?? false,
-  }));
+router.get('/analytics', async (req: AuthRequest, res: Response) => {
+  const companyId = req.user!.companyId || req.user!.id;
+  const jobs = await JobPostModel.find({ companyId }).lean();
+  const stats = await Promise.all(
+    jobs.map(async (job) => ({
+      jobId: job._id,
+      title: job.title,
+      applications: await ApplicationModel.countDocuments({ jobPostId: job._id }),
+      premium: job.premiumFlags?.includes('highlight') ?? false,
+    })),
+  );
   return res.json({ stats });
 });
 

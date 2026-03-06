@@ -15,6 +15,10 @@
 
 const ADSB_BASE = 'https://api.adsb.lol/v2';
 const KUN_ICAO = 'EYKA'; // Kaunas International Airport
+// Kaunas airport coordinates – used for radius search (25 nm)
+const KUN_LAT = 54.8839;
+const KUN_LON = 23.8828;
+const KUN_RADIUS_NM = 25;
 
 /**
  * ICAO airline prefixes (first 3 chars of callsign) that operate SCHEDULED
@@ -86,8 +90,8 @@ function toCache(key: string, data: DivertedFlightSummary): void {
   cache.set(key, { data, expiresAt: Date.now() + CACHE_TTL_MS });
 }
 
-async function fetchAirportAircraft(airport: string): Promise<RawFlight[]> {
-  const url = `${ADSB_BASE}/airport/${airport}`;
+async function fetchAirportAircraft(_airport: string): Promise<RawFlight[]> {
+  const url = `${ADSB_BASE}/lat/${KUN_LAT}/lon/${KUN_LON}/dist/${KUN_RADIUS_NM}`;
   const res = await fetch(url, {
     headers: { 'User-Agent': 'VNO-KUN-DiversionDetector/1.0' },
     signal: AbortSignal.timeout(8_000),

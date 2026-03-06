@@ -4,13 +4,17 @@
     {
       "src": "apps/api/src/main.ts",
       "use": "@vercel/node"
+    },
+    {
+      "src": "apps/web/package.json",
+      "use": "@vercel/next"
     }
   ],
   "routes": [
-    {
-      "src": "/(.*)",
-      "dest": "apps/api/src/main.ts"
-    }
+    { "src": "/health", "dest": "apps/api/src/main.ts" },
+    { "src": "/ready", "dest": "apps/api/src/main.ts" },
+    { "src": "/flights/(.*)", "dest": "apps/api/src/main.ts" },
+    { "src": "/(.*)", "dest": "apps/web" }
   ],
   "env": {}
 }

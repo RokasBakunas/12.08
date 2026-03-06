@@ -6,8 +6,10 @@
     "apps/*"
   ],
   "scripts": {
-    "dev": "npm --workspace apps/api run dev",
-    "lint": "npm --workspace apps/api run lint",
+    "dev:api": "npm --workspace apps/api run dev",
+    "dev:web": "npm --workspace apps/web run dev",
+    "dev": "concurrently \"npm run dev:api\" \"npm run dev:web\"",
+    "lint": "npm --workspace apps/api run lint && npm --workspace apps/web run lint",
     "test": "npm --workspace apps/api run test"
   },
   "engines": {

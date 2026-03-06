@@ -2,7 +2,6 @@ import { Router, Request, Response } from 'express';
 import rateLimit from 'express-rate-limit';
 import {
   detectDiversions,
-  getVilniusDepartures,
   getKaunasArrivals,
   clearCache,
 } from '../services/flightDiversionService';
@@ -30,8 +29,8 @@ function parseWindowHours(query: Request['query']): number {
 /**
  * GET /flights/diversions
  *
- * Returns flights that departed from Vilnius (EYVI) and landed at Kaunas (EYKA),
- * indicating a potential diversion.
+ * Returns flights that landed at Kaunas (EYKA) operated by carriers without
+ * scheduled Kaunas routes – likely diverted from Vilnius (EYVI).
  *
  * Query params:
  *   hours  – look-back window in hours (1–24, default 6)
@@ -49,37 +48,6 @@ router.get('/diversions', async (req: Request, res: Response) => {
       return res.status(400).json({ error: 'invalid_parameter', message: err.message });
     }
     console.error('[flights/diversions] upstream error:', err);
-    return res.status(502).json({
-      error: 'upstream_error',
-      message: 'Could not fetch flight data from OpenSky Network. Please retry later.',
-    });
-  }
-});
-
-/**
- * GET /flights/departures/vilnius
- *
- * Raw list of departures from Vilnius (EYVI) in the look-back window.
- *
- * Query params:
- *   hours  – look-back window in hours (1–24, default 6)
- */
-router.get('/departures/vilnius', async (req: Request, res: Response) => {
-  try {
-    const hours = parseWindowHours(req.query);
-    const flights = await getVilniusDepartures(hours);
-    return res.json({
-      airport: 'EYVI',
-      windowHours: hours,
-      total: flights.length,
-      checkedAt: new Date().toISOString(),
-      flights,
-    });
-  } catch (err) {
-    if (err instanceof RangeError) {
-      return res.status(400).json({ error: 'invalid_parameter', message: (err as Error).message });
-    }
-    console.error('[flights/departures/vilnius] upstream error:', err);
     return res.status(502).json({
       error: 'upstream_error',
       message: 'Could not fetch flight data from OpenSky Network. Please retry later.',
@@ -147,7 +115,6 @@ router.get('/status', async (req: Request, res: Response) => {
       totalDiversions: result.totalDiversions,
       windowHours: hours,
       checkedAt: result.checkedAt,
-      originAirport: result.originAirport,
       diversionAirport: result.diversionAirport,
     });
   } catch (err) {

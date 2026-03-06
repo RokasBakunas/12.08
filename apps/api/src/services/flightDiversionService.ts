@@ -1,19 +1,31 @@
 /**
  * Flight Diversion Detection Service
  *
- * Monitors Vilnius Airport (VNO / ICAO: EYVI) and automatically detects
- * when flights are diverted to Kaunas Airport (KUN / ICAO: EYKA).
+ * Detects flights diverted to Kaunas (KUN / ICAO: EYKA) that were likely
+ * destined for Vilnius (VNO / ICAO: EYVI).
  *
- * Data source: OpenSky Network public REST API (no API key required for basic access).
+ * Strategy: Fetch all arrivals at Kaunas and flag those operated by airlines
+ * that do NOT regularly serve Kaunas. Kaunas has very few scheduled carriers
+ * (Ryanair, Wizz Air), so any other airline landing there is almost certainly
+ * a diversion from Vilnius or another Lithuanian destination.
+ *
+ * Data source: OpenSky Network public REST API (no API key required).
  * Docs: https://openskynetwork.github.io/opensky-api/rest.html
  */
 
 const OPENSKY_BASE = 'https://opensky-network.org/api';
-const VNO_ICAO = 'EYVI'; // Vilnius International Airport
 const KUN_ICAO = 'EYKA'; // Kaunas International Airport
 
-// Known scheduled VNO→KUN domestic route callsign prefixes (not treated as diversions)
-const SCHEDULED_VNO_KUN_PREFIXES: string[] = [];
+/**
+ * ICAO airline prefixes (first 3 chars of callsign) that operate SCHEDULED
+ * routes to Kaunas. Flights from these carriers are NOT flagged as diversions.
+ *
+ * Ryanair       → RYR
+ * Wizz Air      → WZZ
+ * Ryanair Sun   → RYS
+ * Buzz (Ryanair)→ BZZ
+ */
+const REGULAR_KAUNAS_CARRIERS = new Set(['RYR', 'WZZ', 'RYS', 'BZZ']);
 
 export interface RawFlight {
   icao24: string;
@@ -33,15 +45,12 @@ export interface RawFlight {
 export interface DivertedFlight {
   callsign: string | null;
   icao24: string;
-  /** Unix timestamp when the aircraft left Vilnius */
-  departedAt: number;
-  departedAtIso: string;
+  /** Airport the flight actually departed from */
+  departureAirport: string | null;
   /** Unix timestamp when the aircraft landed at Kaunas */
   arrivedAt: number;
   arrivedAtIso: string;
-  originAirport: string;
-  diversionAirport: string;
-  flightDurationSeconds: number;
+  diversionAirport: 'EYKA';
   detectedAt: string;
 }
 
@@ -49,8 +58,8 @@ export interface DivertedFlightSummary {
   totalDiversions: number;
   windowHours: number;
   checkedAt: string;
-  originAirport: string;
-  diversionAirport: string;
+  diversionAirport: 'EYKA';
+  note: string;
   flights: DivertedFlight[];
 }
 
@@ -92,15 +101,18 @@ async function fetchFlights(endpoint: string): Promise<RawFlight[]> {
     throw new Error(`OpenSky API error: ${res.status} ${res.statusText}`);
   }
 
-  const data = await res.json() as RawFlight[];
+  const data = (await res.json()) as RawFlight[];
   return Array.isArray(data) ? data : [];
 }
 
 /**
- * Detects flights that departed from Vilnius (EYVI) and arrived at Kaunas (EYKA)
- * within the last `windowHours` hours. These are flagged as potential diversions.
+ * Detects flights likely diverted to Kaunas (EYKA).
  *
- * @param windowHours - How many hours back to search (default 6, max 24 per OpenSky limits)
+ * A flight is flagged as a diversion if it arrived at Kaunas AND its callsign
+ * does NOT belong to a carrier that operates scheduled Kaunas routes.
+ * Domestic Lithuanian departures are also excluded.
+ *
+ * @param windowHours - How many hours back to search (1–24, default 6)
  */
 export async function detectDiversions(windowHours = 6): Promise<DivertedFlightSummary> {
   const hours = Math.min(Math.max(1, windowHours), 24);
@@ -112,42 +124,37 @@ export async function detectDiversions(windowHours = 6): Promise<DivertedFlightS
   const now = Math.floor(Date.now() / 1000);
   const begin = now - hours * 3600;
 
-  // 1. Fetch all departures from Vilnius in the time window
-  const departuresUrl = `${OPENSKY_BASE}/flights/departure?airport=${VNO_ICAO}&begin=${begin}&end=${now}`;
-  const departures = await fetchFlights(departuresUrl);
-
-  // 2. Fetch all arrivals at Kaunas in the same window
   const arrivalsUrl = `${OPENSKY_BASE}/flights/arrival?airport=${KUN_ICAO}&begin=${begin}&end=${now}`;
   const arrivals = await fetchFlights(arrivalsUrl);
 
-  // 3. Build lookup by icao24 (aircraft transponder address) for Kaunas arrivals
-  const kaunasArrivals = new Map<string, RawFlight>();
-  for (const flight of arrivals) {
-    kaunasArrivals.set(flight.icao24, flight);
-  }
+  // Lithuanian airport ICAO codes – flights from these are not diversions
+  const lithuanianAirports = new Set(['EYVI', 'EYKA', 'EYPA', 'EYSA']);
 
-  // 4. Cross-reference: any aircraft that departed VNO and arrived KUN is a diversion
   const diverted: DivertedFlight[] = [];
-  for (const dep of departures) {
-    const arr = kaunasArrivals.get(dep.icao24);
-    if (!arr) continue;
 
-    // Skip if callsign belongs to a known scheduled VNO→KUN route
-    const callsign = dep.callsign?.trim() || arr.callsign?.trim() || null;
-    if (callsign && SCHEDULED_VNO_KUN_PREFIXES.some((p) => callsign.startsWith(p))) {
-      continue;
-    }
+  for (const flight of arrivals) {
+    const callsign = flight.callsign?.trim() || null;
+
+    // Skip flights with no callsign (private/unidentified aircraft)
+    if (!callsign) continue;
+
+    // Skip regular Kaunas scheduled carriers
+    const prefix = callsign.slice(0, 3).toUpperCase();
+    if (REGULAR_KAUNAS_CARRIERS.has(prefix)) continue;
+
+    // Skip flights that departed from Lithuanian airports (not diversions)
+    if (flight.estDepartureAirport && lithuanianAirports.has(flight.estDepartureAirport)) continue;
+
+    // Skip flights with no known departure airport
+    if (!flight.estDepartureAirport) continue;
 
     diverted.push({
       callsign,
-      icao24: dep.icao24,
-      departedAt: dep.firstSeen,
-      departedAtIso: new Date(dep.firstSeen * 1000).toISOString(),
-      arrivedAt: arr.lastSeen,
-      arrivedAtIso: new Date(arr.lastSeen * 1000).toISOString(),
-      originAirport: VNO_ICAO,
-      diversionAirport: KUN_ICAO,
-      flightDurationSeconds: arr.lastSeen - dep.firstSeen,
+      icao24: flight.icao24,
+      departureAirport: flight.estDepartureAirport,
+      arrivedAt: flight.lastSeen,
+      arrivedAtIso: new Date(flight.lastSeen * 1000).toISOString(),
+      diversionAirport: 'EYKA',
       detectedAt: new Date().toISOString(),
     });
   }
@@ -156,8 +163,8 @@ export async function detectDiversions(windowHours = 6): Promise<DivertedFlightS
     totalDiversions: diverted.length,
     windowHours: hours,
     checkedAt: new Date().toISOString(),
-    originAirport: VNO_ICAO,
-    diversionAirport: KUN_ICAO,
+    diversionAirport: 'EYKA',
+    note: 'Flights that landed at Kaunas operated by carriers without scheduled Kaunas routes – likely diverted from Vilnius (EYVI).',
     flights: diverted,
   };
 
@@ -166,18 +173,7 @@ export async function detectDiversions(windowHours = 6): Promise<DivertedFlightS
 }
 
 /**
- * Returns live departures from Vilnius within the last `windowHours` hours.
- */
-export async function getVilniusDepartures(windowHours = 6): Promise<RawFlight[]> {
-  const hours = Math.min(Math.max(1, windowHours), 24);
-  const now = Math.floor(Date.now() / 1000);
-  const begin = now - hours * 3600;
-  const url = `${OPENSKY_BASE}/flights/departure?airport=${VNO_ICAO}&begin=${begin}&end=${now}`;
-  return fetchFlights(url);
-}
-
-/**
- * Returns live arrivals at Kaunas within the last `windowHours` hours.
+ * Returns all arrivals at Kaunas within the last `windowHours` hours (raw data).
  */
 export async function getKaunasArrivals(windowHours = 6): Promise<RawFlight[]> {
   const hours = Math.min(Math.max(1, windowHours), 24);

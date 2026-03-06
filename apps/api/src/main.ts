@@ -14,6 +14,19 @@ app.use(cors());
 app.use(express.json());
 app.use(morgan('dev'));
 
+app.get('/', (_req, res) => {
+  res.json({
+    name: 'VNO-KUN Diversion Detector API',
+    endpoints: [
+      'GET /health',
+      'GET /flights/diversions?hours=6',
+      'GET /flights/arrivals/kaunas?hours=6',
+      'GET /flights/status?hours=6',
+      'POST /flights/cache/clear',
+    ],
+  });
+});
+
 app.get('/health', (_req, res) => {
   res.json({ status: 'ok' });
 });

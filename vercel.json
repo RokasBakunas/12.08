@@ -1,10 +1,6 @@
 {
-  "version": 2,
-  "builds": [
-    {
-      "src": "apps/web/package.json",
-      "use": "@vercel/next"
-    }
-  ],
-  "env": {}
+  "framework": "nextjs",
+  "buildCommand": "npm --workspace apps/web run build",
+  "outputDirectory": "apps/web/.next",
+  "installCommand": "npm install"
 }

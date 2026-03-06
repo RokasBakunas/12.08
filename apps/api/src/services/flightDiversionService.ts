@@ -114,11 +114,39 @@ async function fetchFlights(endpoint: string): Promise<RawFlight[]> {
   }
 
   if (!res.ok) {
-    throw new Error(`OpenSky API error: ${res.status} ${res.statusText}`);
+    const body = await res.text().catch(() => '');
+    throw new Error(`OpenSky API error: ${res.status} ${res.statusText} – ${body}`);
   }
 
   const data = (await res.json()) as RawFlight[];
   return Array.isArray(data) ? data : [];
+}
+
+/**
+ * OpenSky /flights/arrival allows at most 2 hours per request.
+ * This helper splits larger windows into 2-hour chunks and merges results.
+ */
+async function fetchArrivals(airport: string, begin: number, end: number): Promise<RawFlight[]> {
+  const CHUNK_SECS = 2 * 3600; // 2 hours
+  const results: RawFlight[] = [];
+
+  let chunkStart = begin;
+  while (chunkStart < end) {
+    const chunkEnd = Math.min(chunkStart + CHUNK_SECS, end);
+    const url = `${OPENSKY_BASE}/flights/arrival?airport=${airport}&begin=${chunkStart}&end=${chunkEnd}`;
+    const chunk = await fetchFlights(url);
+    results.push(...chunk);
+    chunkStart = chunkEnd;
+  }
+
+  // Deduplicate by icao24 + lastSeen
+  const seen = new Set<string>();
+  return results.filter(f => {
+    const key = `${f.icao24}:${f.lastSeen}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
 }
 
 /**
@@ -140,8 +168,7 @@ export async function detectDiversions(windowHours = 6): Promise<DivertedFlightS
   const now = Math.floor(Date.now() / 1000);
   const begin = now - hours * 3600;
 
-  const arrivalsUrl = `${OPENSKY_BASE}/flights/arrival?airport=${KUN_ICAO}&begin=${begin}&end=${now}`;
-  const arrivals = await fetchFlights(arrivalsUrl);
+  const arrivals = await fetchArrivals(KUN_ICAO, begin, now);
 
   // Lithuanian airport ICAO codes – flights from these are not diversions
   const lithuanianAirports = new Set(['EYVI', 'EYKA', 'EYPA', 'EYSA']);
@@ -195,8 +222,7 @@ export async function getKaunasArrivals(windowHours = 6): Promise<RawFlight[]> {
   const hours = Math.min(Math.max(1, windowHours), 24);
   const now = Math.floor(Date.now() / 1000);
   const begin = now - hours * 3600;
-  const url = `${OPENSKY_BASE}/flights/arrival?airport=${KUN_ICAO}&begin=${begin}&end=${now}`;
-  return fetchFlights(url);
+  return fetchArrivals(KUN_ICAO, begin, now);
 }
 
 /** Clears the in-memory cache (useful for forced refresh). */
